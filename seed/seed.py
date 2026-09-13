@@ -51,7 +51,7 @@ NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD", "neo4jpass")
 VOYAGE_API_KEY = os.environ.get("VOYAGE_API_KEY", "").strip()
 VOYAGE_MODEL = os.environ.get("VOYAGE_MODEL", "voyage-3-lite")
 VOYAGE_URL = "https://api.voyageai.com/v1/embeddings"
-EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "1024"))
+EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "512"))  # voyage-3-lite native dim
 
 HF_TOKEN = os.environ.get("HF_TOKEN", "").strip()
 
@@ -441,10 +441,8 @@ def voyage_embed(texts: list[str], retries: int = 4) -> list[list[float]]:
         "Authorization": f"Bearer {VOYAGE_API_KEY}",
         "Content-Type": "application/json",
     }
-    # voyage-3-lite defaults to 512 dims; the Postgres column is vector(1024), so ask for
-    # 1024 explicitly. Overridable via env if you switch models.
-    body = {"input": texts, "model": VOYAGE_MODEL, "input_type": "document",
-            "output_dimension": EMBEDDING_DIM}
+    # Use the model's native output dim (512 for voyage-3-lite) — pgvector column matches.
+    body = {"input": texts, "model": VOYAGE_MODEL, "input_type": "document"}
     for attempt in range(1, retries + 1):
         try:
             resp = requests.post(VOYAGE_URL, headers=headers, json=body, timeout=120)

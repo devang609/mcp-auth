@@ -37,12 +37,11 @@ public class VoyageClient {
             throw new IllegalStateException(
                     "VOYAGE_API_KEY is not set; embedding calls are required for search tools");
         }
-        // voyage-3-lite defaults to 512 dims — request the schema's dim (1024) explicitly.
+        // Use the model's native output dim (512 for voyage-3-lite) — pgvector column matches.
         Map<String, Object> body = Map.of(
                 "input", List.of(text),
                 "model", props.voyage().model(),
-                "input_type", "query",
-                "output_dimension", props.voyage().dim());
+                "input_type", "query");
 
         EmbeddingResponse resp = http.post()
                 .uri(props.voyage().url())

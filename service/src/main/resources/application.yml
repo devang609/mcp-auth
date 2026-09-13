@@ -62,7 +62,7 @@ app:
     api-key: ${VOYAGE_API_KEY:}
     model: ${VOYAGE_MODEL:voyage-3-lite}
     url: https://api.voyageai.com/v1/embeddings
-    dim: 1024
+    dim: 512
 
 management:
   endpoints:

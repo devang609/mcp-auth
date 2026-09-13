@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS clinical_notes_embeddings (
     patient_id BIGINT,
     note_type  TEXT,
     specialty  TEXT,
-    embedding  vector(1024)
+    embedding  vector(512)
 );
 
 -- HNSW index for cosine similarity search over note embeddings (CONTRACT §7).
