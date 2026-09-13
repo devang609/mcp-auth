@@ -1,0 +1,233 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Enterprise Multi-Database RAG over MCP — full stack.
+#   docker compose up --build
+# Only Traefik publishes host ports (80/443). Everything else is internal-only.
+# See docs/CONTRACT.md for the authoritative naming/port/env contract.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: healthcare-rag
+
+networks:
+  healthnet:
+    driver: bridge
+
+volumes:
+  pg_data:
+  mongo_data:
+  neo4j_data:
+  mt_samples:      # holds the downloaded MT Samples CSV so re-runs skip the download
+
+services:
+
+  # 1. Reverse proxy / TLS termination ----------------------------------------
+  traefik:
+    image: traefik:v3
+    container_name: hc-traefik
+    restart: unless-stopped
+    # Optional local-HTTPS edge for the mcp.local / keycloak.local + mkcert flow.
+    # NOT started by default (Codespaces forwards the container ports directly, and local
+    # runs use http://localhost:8080 + http://localhost:8081). Enable with:
+    #   docker compose --profile edge up --build
+    # and set PUBLIC_MCP_URL=https://mcp.local, PUBLIC_KEYCLOAK_URL=https://keycloak.local.
+    profiles: ["edge"]
+    command:
+      - --configFile=/etc/traefik/traefik.yml
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic:/etc/traefik/dynamic:ro
+      - ./traefik/certs:/certs:ro
+    networks:
+      - healthnet
+    depends_on:
+      mcp-server:
+        condition: service_started
+      keycloak:
+        condition: service_started
+
+  # 2. Java Spring Boot MCP / RAG server ---------------------------------------
+  mcp-server:
+    build:
+      context: ./service
+      dockerfile: Dockerfile
+    container_name: hc-mcp-server
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_DATA_MONGODB_URI: mongodb://${MONGO_USER}:${MONGO_PASSWORD}@mongodb:27017/${MONGO_INITDB_DATABASE}?authSource=admin
+      SPRING_NEO4J_URI: bolt://neo4j:7687
+      SPRING_NEO4J_AUTHENTICATION_USERNAME: ${NEO4J_USER}
+      SPRING_NEO4J_AUTHENTICATION_PASSWORD: ${NEO4J_PASSWORD}
+      OPA_URL: ${OPA_URL:-http://opa:8181}
+      KEYCLOAK_INTERNAL_URL: ${KEYCLOAK_INTERNAL_URL:-http://keycloak:8080}
+      # Public URLs the clients see. Locally these default to localhost; in a Codespace set
+      # PUBLIC_KEYCLOAK_URL / PUBLIC_MCP_URL to the forwarded github.dev URLs (see .env.example).
+      KEYCLOAK_ISSUER: ${PUBLIC_KEYCLOAK_URL:-http://localhost:8081}/realms/healthcare-demo
+      MCP_RESOURCE_URL: ${PUBLIC_MCP_URL:-http://localhost:8080}
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY}
+      VOYAGE_MODEL: ${VOYAGE_MODEL}
+    ports:
+      # Forwarded by Codespaces to https://<codespace>-8080.app.github.dev (set it Public).
+      - "8080:8080"
+    networks:
+      - healthnet
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+      opa:
+        condition: service_started
+      keycloak:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
+  # 3. Keycloak — OAuth 2.1 identity provider ---------------------------------
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: hc-keycloak
+    restart: unless-stopped
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      # Public base URL Keycloak advertises (issuer, endpoints). localhost by default;
+      # in a Codespace set PUBLIC_KEYCLOAK_URL to the forwarded https://<cs>-8081.app.github.dev.
+      KC_HOSTNAME: ${PUBLIC_KEYCLOAK_URL:-http://localhost:8081}
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded          # trust github.dev / Traefik X-Forwarded-* headers
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      - ./keycloak/realm-healthcare-demo.json:/opt/keycloak/data/import/realm-healthcare-demo.json:ro
+    ports:
+      # Forwarded by Codespaces to https://<codespace>-8081.app.github.dev (set it Public).
+      - "8081:8080"
+    networks:
+      - healthnet
+    # No healthcheck: the Keycloak (UBI-micro) image ships no curl/wget/bash, so a
+    # container-internal probe is unreliable. The MCP server fetches JWKS lazily on the
+    # first token validation, so it does not need Keycloak ready at boot; dependents use
+    # `service_started`. Keycloak's own readiness is at https://keycloak.local when the
+    # browser login begins (well after startup).
+
+  # 4. OPA — policy decision point --------------------------------------------
+  opa:
+    image: openpolicyagent/opa:latest-envoy
+    container_name: hc-opa
+    restart: unless-stopped
+    command:
+      - "run"
+      - "--server"
+      - "--addr=0.0.0.0:8181"
+      - "--log-level=info"
+      - "--set=decision_logs.console=true"
+      - "/policies"
+      - "/data"
+    volumes:
+      - ./opa/policies:/policies:ro
+      - ./opa/data:/data:ro
+    networks:
+      - healthnet
+    # No healthcheck: the OPA image is distroless (no shell/wget). OPA is ready within ~1s;
+    # dependents use `service_started`, and the MCP server fails closed + retries on any
+    # transient OPA error, with a static policy-data fallback bundled in the image.
+
+  # 5. Postgres 16 + pgvector -------------------------------------------------
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: hc-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - healthnet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  # 6. MongoDB 7 --------------------------------------------------------------
+  mongodb:
+    image: mongo:7
+    container_name: hc-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE}
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - healthnet
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  # 7. Neo4j 5 Community ------------------------------------------------------
+  neo4j:
+    image: neo4j:5-community
+    container_name: hc-neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER}/${NEO4J_PASSWORD}
+      NEO4J_server_memory_pagecache_size: 256M
+      NEO4J_server_memory_heap_max__size: 512M
+    volumes:
+      - neo4j_data:/data
+    networks:
+      - healthnet
+    healthcheck:
+      # cypher-shell ships in the neo4j image; ${..} is interpolated by compose at parse time.
+      test: ["CMD-SHELL", "cypher-shell -u ${NEO4J_USER} -p ${NEO4J_PASSWORD} 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
+
+  # 8. Seed — one-shot Python loader (runs, exits 0, then mcp-server starts) ---
+  seed:
+    build:
+      context: ./seed
+      dockerfile: Dockerfile
+    container_name: hc-seed
+    restart: "no"
+    environment:
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_DB: ${POSTGRES_DB}
+      PG_USER: ${POSTGRES_USER}
+      PG_PASSWORD: ${POSTGRES_PASSWORD}
+      MONGO_URI: mongodb://${MONGO_USER}:${MONGO_PASSWORD}@mongodb:27017/${MONGO_INITDB_DATABASE}?authSource=admin
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: ${NEO4J_USER}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY}
+      VOYAGE_MODEL: ${VOYAGE_MODEL}
+      HF_TOKEN: ${HF_TOKEN}
+    volumes:
+      - mt_samples:/data
+    networks:
+      - healthnet
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy

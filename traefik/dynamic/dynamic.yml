@@ -1,0 +1,41 @@
+# Traefik v3 dynamic configuration (file provider, watched).
+# Defines TLS certificates, routers, and services for the healthcare MCP demo.
+
+tls:
+  certificates:
+    - certFile: /certs/local.pem
+      keyFile: /certs/local-key.pem
+
+http:
+  routers:
+    # https://mcp.local → Java MCP server
+    mcp:
+      rule: "Host(`mcp.local`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      service: mcp-svc
+
+    # https://keycloak.local → Keycloak
+    keycloak:
+      rule: "Host(`keycloak.local`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      service: keycloak-svc
+
+  services:
+    mcp-svc:
+      loadBalancer:
+        servers:
+          - url: "http://mcp-server:8080"
+        # Traefik forwards X-Forwarded-* headers by default (Host, Proto, For, Port).
+        passHostHeader: true
+
+    keycloak-svc:
+      loadBalancer:
+        servers:
+          - url: "http://keycloak:8080"
+        # Keycloak relies on X-Forwarded-* (KC_PROXY_HEADERS=xforwarded, see CONTRACT §4)
+        # to build correct external issuer/redirect URLs. passHostHeader keeps Host: keycloak.local.
+        passHostHeader: true

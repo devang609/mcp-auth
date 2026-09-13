@@ -1,0 +1,4 @@
+# Place demo screenshots here (referenced by DEMO.md):
+#   consent-oauth.png     — Keycloak OAuth scope-consent screen (consent moment 1)
+#   consent-mcp-tool.png  — Claude Code Desktop tool-invocation prompt (consent moment 2)
+#   opa-decision-log.png  — an OPA decision-log line from `docker compose logs opa`

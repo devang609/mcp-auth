@@ -1,0 +1,11 @@
+{
+  "care_team": [
+    { "provider": "dr_smith", "patient": 10001, "rel": "TREATS" },
+    { "provider": "dr_smith", "patient": 10002, "rel": "TREATS" },
+    { "provider": "dr_smith", "patient": 10003, "rel": "TREATS" },
+    { "provider": "dr_smith", "patient": 10004, "rel": "TREATS" },
+    { "provider": "dr_smith", "patient": 10005, "rel": "TREATS" },
+    { "provider": "dr_smith", "patient": 10010, "rel": "CONSULTS_ON" },
+    { "provider": "dr_smith", "patient": 10011, "rel": "CONSULTS_ON" }
+  ]
+}

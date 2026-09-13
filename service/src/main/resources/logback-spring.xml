@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Structured JSON logs to stdout (visible via `docker compose logs mcp-server`). -->
+<configuration>
+    <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeMdcKeyName>user</includeMdcKeyName>
+            <includeMdcKeyName>decision_id</includeMdcKeyName>
+            <includeMdcKeyName>tool</includeMdcKeyName>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="JSON"/>
+    </root>
+    <logger name="com.healthcare.rag" level="DEBUG"/>
+</configuration>

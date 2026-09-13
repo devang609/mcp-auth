@@ -1,0 +1,39 @@
+# Traefik v3 static configuration
+# Reverse proxy for the Dockerized healthcare MCP demo.
+# Only Traefik publishes host ports (80, 443); every other service is internal-only.
+
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+
+entryPoints:
+  # HTTP: redirect everything to HTTPS.
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+
+  # HTTPS: terminates TLS using the mkcert cert referenced in the dynamic config.
+  websecure:
+    address: ":443"
+
+# Dashboard on :8080 (internal only — never published to the host in compose).
+api:
+  dashboard: true
+  insecure: true
+
+# We use the file provider only (explicit and simple) — NOT the docker provider.
+providers:
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+  # providers.docker intentionally disabled (file provider is the single source of routes).
+
+log:
+  level: INFO
+
+accessLog: {}

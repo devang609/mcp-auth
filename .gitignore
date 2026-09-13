@@ -1,0 +1,27 @@
+# TLS certificates (generated locally via mkcert — never commit)
+traefik/certs/*.pem
+
+# Environment / secrets
+.env
+!.env.example
+
+# Seed data (generated CSVs)
+seed/data/*.csv
+
+# Java / Maven build output
+service/target/
+
+# Python
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# IDE / editor
+.idea/
+.vscode/
+*.iml
+*.swp
+.DS_Store
+Thumbs.db

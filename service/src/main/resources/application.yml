@@ -1,0 +1,80 @@
+server:
+  port: 8080
+  forward-headers-strategy: framework   # honour Traefik's X-Forwarded-* headers
+
+spring:
+  application:
+    name: healthcare-rag-mcp
+
+  # --- Postgres (relational + pgvector) ---
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgres:5432/healthcare}
+    username: ${SPRING_DATASOURCE_USERNAME:rag}
+    password: ${SPRING_DATASOURCE_PASSWORD:ragpass}
+    hikari:
+      maximum-pool-size: 10
+  jpa:
+    hibernate:
+      ddl-auto: none          # schema + data are created by the seed container
+    open-in-view: false
+    properties:
+      hibernate.jdbc.time_zone: UTC
+
+  # --- MongoDB (clinical notes) ---
+  data:
+    mongodb:
+      uri: ${SPRING_DATA_MONGODB_URI:mongodb://rag:ragpass@mongodb:27017/clinical?authSource=admin}
+
+  # --- Neo4j (care-team graph) ---
+  neo4j:
+    uri: ${SPRING_NEO4J_URI:bolt://neo4j:7687}
+    authentication:
+      username: ${SPRING_NEO4J_AUTHENTICATION_USERNAME:neo4j}
+      password: ${SPRING_NEO4J_AUTHENTICATION_PASSWORD:neo4jpass}
+
+  # --- MCP server (Spring AI: protocol plumbing only) ---
+  ai:
+    mcp:
+      server:
+        enabled: true
+        type: SYNC
+        protocol: STREAMABLE      # Streamable HTTP transport
+        endpoint: /mcp            # POST/GET/DELETE /mcp
+        name: healthcare-rag
+        version: 0.1.0
+        instructions: >
+          Multi-database clinical RAG. Every tool is authorized per-user by OPA and
+          returns results filtered/redacted to the caller's role.
+
+# Application-specific configuration (read by our own beans)
+app:
+  opa:
+    url: ${OPA_URL:http://opa:8181}
+    decision-path: /v1/data/healthcare/authz/decision
+    data-path: /v1/data/care_team
+  keycloak:
+    internal-url: ${KEYCLOAK_INTERNAL_URL:http://keycloak:8080}
+    realm: healthcare-demo
+    issuer: ${KEYCLOAK_ISSUER:https://keycloak.local/realms/healthcare-demo}
+  mcp:
+    resource-url: ${MCP_RESOURCE_URL:https://mcp.local}
+  voyage:
+    api-key: ${VOYAGE_API_KEY:}
+    model: ${VOYAGE_MODEL:voyage-3-lite}
+    url: https://api.voyageai.com/v1/embeddings
+    dim: 1024
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.healthcare.rag: DEBUG

@@ -1,0 +1,7 @@
+psycopg[binary]==3.2.3
+pymongo==4.10.1
+neo4j==5.26.0
+faker==30.8.2
+requests==2.32.3
+pgvector==0.3.6
+pandas==2.2.3
