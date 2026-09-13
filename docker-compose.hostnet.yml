@@ -1,0 +1,59 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Host-networking override.
+#
+# Use in environments where the Docker BRIDGE network doesn't forward
+# container-to-container traffic (some Codespaces / restricted Linux hosts,
+# where iptables FORWARD is enforced DROP and can't be relaxed). Every container
+# shares the host's network namespace — no bridge, no NAT — and services reach
+# each other on localhost:<port>. All ports are already unique across services.
+#
+# Usage (Linux only — this mode is a no-op on Docker Desktop for Mac/Windows):
+#   docker compose -f docker-compose.yml -f docker-compose.hostnet.yml up --build
+#
+# The base compose file's `networks:` declarations are ignored under host mode.
+# Published ports (`ports:`) are also ignored — the container ports ARE the host
+# ports.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  postgres:
+    network_mode: host
+
+  mongodb:
+    network_mode: host
+
+  neo4j:
+    network_mode: host
+
+  opa:
+    network_mode: host
+
+  keycloak:
+    network_mode: host
+    environment:
+      # Under host mode Keycloak must listen on 8081 directly (no 8081:8080 map).
+      KC_HTTP_PORT: "8081"
+
+  seed:
+    network_mode: host
+    environment:
+      PG_HOST: localhost
+      PG_PORT: "5432"
+      MONGO_URI: mongodb://${MONGO_USER}:${MONGO_PASSWORD}@localhost:27017/${MONGO_INITDB_DATABASE}?authSource=admin
+      NEO4J_URI: bolt://localhost:7687
+
+  mcp-server:
+    network_mode: host
+    environment:
+      # Point every backend at localhost (the shared host netns).
+      SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/${POSTGRES_DB}
+      SPRING_DATA_MONGODB_URI: mongodb://${MONGO_USER}:${MONGO_PASSWORD}@localhost:27017/${MONGO_INITDB_DATABASE}?authSource=admin
+      SPRING_NEO4J_URI: bolt://localhost:7687
+      OPA_URL: http://localhost:8181
+      KEYCLOAK_INTERNAL_URL: http://localhost:8081
+
+  traefik:
+    # Traefik in the base file is profile=edge (off by default). Keep it off under
+    # host mode — Codespaces terminates TLS on the forwarded ports for you.
+    profiles: ["edge-disabled"]
