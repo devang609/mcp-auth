@@ -466,10 +466,10 @@
     "basic",
     "profile",
     "email",
-    "healthcare-claims"
+    "healthcare-claims",
+    "offline_access"
   ],
   "defaultOptionalClientScopes": [
-    "offline_access",
     "microprofile-jwt",
     "patients:read",
     "notes:read",
