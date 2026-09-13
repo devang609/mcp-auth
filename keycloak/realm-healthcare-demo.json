@@ -597,16 +597,6 @@
   "components": {
     "org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy": [
       {
-        "name": "Trusted Hosts",
-        "providerId": "trusted-hosts",
-        "subType": "anonymous",
-        "subComponents": {},
-        "config": {
-          "host-sending-registration-request-must-match": ["false"],
-          "client-uris-must-match": ["false"]
-        }
-      },
-      {
         "name": "Consent Required",
         "providerId": "consent-required",
         "subType": "anonymous",
