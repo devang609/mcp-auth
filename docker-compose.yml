@@ -207,6 +207,13 @@ services:
       dockerfile: Dockerfile
     container_name: hc-seed
     restart: "no"
+    # Explicit DNS in case the Docker daemon's default resolver can't reach the internet
+    # (common in restricted/corp networks and some Codespace configs). If DNS is still
+    # blocked, download mtsamples.csv on the host and drop it at ./seed/data/mtsamples.csv
+    # — the volume mount below will pick it up and the container will skip the download.
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     environment:
       PG_HOST: postgres
       PG_PORT: "5432"
@@ -222,6 +229,9 @@ services:
       HF_TOKEN: ${HF_TOKEN}
     volumes:
       - mt_samples:/data
+      # Optional: put a pre-downloaded mtsamples.csv at ./seed/data/ on the host and the
+      # container will use it instead of downloading. Safe if the dir/file doesn't exist.
+      - ./seed/data:/host-data:ro
     networks:
       - healthnet
     depends_on:

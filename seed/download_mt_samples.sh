@@ -14,6 +14,15 @@ if [ -f "${OUT}" ]; then
     exit 0
 fi
 
+# If the user has pre-downloaded the CSV to ./seed/data/ on the host (bind-mounted at
+# /host-data), copy it in and skip the network fetch. Handy when DNS/egress is blocked.
+if [ -f "/host-data/mtsamples.csv" ]; then
+    echo "[download] found host-mounted /host-data/mtsamples.csv (skipping network fetch)"
+    cp "/host-data/mtsamples.csv" "${OUT}"
+    echo "[download] copied: $(wc -c < "${OUT}") bytes"
+    exit 0
+fi
+
 echo "[download] fetching ${URL}"
 echo "[download]   -> ${OUT}"
 

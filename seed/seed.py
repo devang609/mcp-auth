@@ -80,6 +80,15 @@ def ensure_csv() -> None:
         return
 
     os.makedirs(DATA_DIR, exist_ok=True)
+
+    # Fast path: host-mounted pre-downloaded CSV (see docker-compose seed volumes).
+    host_csv = "/host-data/mtsamples.csv"
+    if os.path.exists(host_csv) and os.path.getsize(host_csv) > 0:
+        log(f"copying host-mounted CSV {host_csv} -> {CSV_PATH}")
+        import shutil
+        shutil.copyfile(host_csv, CSV_PATH)
+        return
+
     downloader = os.path.join(os.path.dirname(__file__), "download_mt_samples.sh")
 
     # Prefer the shell downloader (uses curl); fall back to in-python requests.
