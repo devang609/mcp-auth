@@ -58,10 +58,11 @@ HF_TOKEN = os.environ.get("HF_TOKEN", "").strip()
 SCHEMA_SQL = os.path.join(os.path.dirname(__file__), "postgres", "01_schema.sql")
 
 # Tuning
-MAX_NOTES = int(os.environ.get("MAX_NOTES", "800"))       # cap rows for speed
+MAX_NOTES = int(os.environ.get("MAX_NOTES", "60"))        # cap rows (free-tier fits 60 in ~4 min)
 NUM_PATIENTS = int(os.environ.get("NUM_PATIENTS", "50"))
-EMBED_BATCH = int(os.environ.get("EMBED_BATCH", "64"))    # Voyage batch size
-EMBED_TRUNCATE = 8000                                     # chars per note
+EMBED_BATCH = int(os.environ.get("EMBED_BATCH", "6"))     # Voyage batch size (free tier: keep small)
+EMBED_TRUNCATE = int(os.environ.get("EMBED_TRUNCATE", "1500"))  # chars/note (≈400 tokens)
+EMBED_INTERVAL_SEC = float(os.environ.get("EMBED_INTERVAL_SEC", "22"))  # >20s → <3 RPM
 DB_RETRY_SECONDS = int(os.environ.get("DB_RETRY_SECONDS", "60"))
 
 
@@ -399,9 +400,18 @@ def load_postgres_embeddings(conn, notes: list[dict]) -> int:
     total = len(notes)
     inserted = 0
     with conn.cursor() as cur:
+        last_request_ts = 0.0
         for start in range(0, total, EMBED_BATCH):
             batch = notes[start:start + EMBED_BATCH]
             texts = [n["text"][:EMBED_TRUNCATE] for n in batch]
+
+            # Throttle to stay under Voyage's free-tier 3 RPM limit.
+            wait = EMBED_INTERVAL_SEC - (time.time() - last_request_ts)
+            if last_request_ts and wait > 0:
+                log(f"throttle: sleeping {wait:.1f}s to respect free-tier 3 RPM")
+                time.sleep(wait)
+            last_request_ts = time.time()
+
             embeddings = voyage_embed(texts)
 
             params = []
@@ -432,13 +442,15 @@ def voyage_embed(texts: list[str], retries: int = 4) -> list[list[float]]:
         "Content-Type": "application/json",
     }
     body = {"input": texts, "model": VOYAGE_MODEL, "input_type": "document"}
-    delay = 2.0
     for attempt in range(1, retries + 1):
         try:
             resp = requests.post(VOYAGE_URL, headers=headers, json=body, timeout=120)
-            if resp.status_code == 429 or resp.status_code >= 500:
-                raise requests.HTTPError(
-                    f"{resp.status_code}: {resp.text[:200]}")
+            # Free-tier 429 needs a FULL RPM window (~60s), not an exponential-from-2s
+            # backoff — bumping delay is meaningless when the limit is per-minute.
+            if resp.status_code == 429:
+                raise requests.HTTPError(f"429: {resp.text[:200]}")
+            if resp.status_code >= 500:
+                raise requests.HTTPError(f"{resp.status_code}: {resp.text[:200]}")
             resp.raise_for_status()
             data = resp.json()["data"]
             # Preserve request order.
@@ -449,10 +461,11 @@ def voyage_embed(texts: list[str], retries: int = 4) -> list[list[float]]:
                 raise RuntimeError(
                     f"Voyage embedding request failed after {retries} tries: {exc}"
                 ) from exc
+            is_429 = "429" in str(exc)
+            delay = 65.0 if is_429 else min(2.0 * (2 ** (attempt - 1)), 30.0)
             log(f"Voyage request failed ({exc}); retry {attempt}/{retries} "
                 f"in {delay:.0f}s")
             time.sleep(delay)
-            delay *= 2
     return []  # unreachable
 
 
