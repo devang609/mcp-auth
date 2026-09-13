@@ -32,14 +32,16 @@ spring:
       username: ${SPRING_NEO4J_AUTHENTICATION_USERNAME:neo4j}
       password: ${SPRING_NEO4J_AUTHENTICATION_PASSWORD:neo4jpass}
 
-  # --- MCP server (Spring AI: protocol plumbing only) ---
+  # --- MCP server (Spring AI 1.0.x: SSE transport over WebMVC) ---
   ai:
     mcp:
       server:
         enabled: true
         type: SYNC
-        protocol: STREAMABLE      # Streamable HTTP transport
-        endpoint: /mcp            # POST/GET/DELETE /mcp
+        # Spring AI 1.0.x exposes SSE at `sse-endpoint` and message POSTs at
+        # `sse-message-endpoint`. Clients connect to the sse-endpoint URL.
+        sse-endpoint: /sse
+        sse-message-endpoint: /mcp/message
         name: healthcare-rag
         version: 0.1.0
         instructions: >

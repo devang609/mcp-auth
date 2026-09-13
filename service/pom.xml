@@ -28,7 +28,10 @@
     <properties>
         <java.version>21</java.version>
         <!-- Spring AI BOM; only the MCP server starter is used from it. -->
-        <spring-ai.version>2.0.1</spring-ai.version>
+        <!-- Spring AI 1.0.x uses Jackson 2 (matches Spring Boot 3.5.x). 2.0.x moved to
+             Jackson 3 (tools.jackson.*) and blows up on jackson-annotations 2 in the
+             classpath (missing JsonSerializeAs). Stay on 1.0.x. -->
+        <spring-ai.version>1.0.1</spring-ai.version>
     </properties>
 
     <dependencyManagement>
